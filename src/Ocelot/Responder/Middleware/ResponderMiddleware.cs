@@ -1,10 +1,10 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Ocelot.Errors;
-using Ocelot.Infrastructure.RequestData;
 using Ocelot.Logging;
 using Ocelot.Middleware;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Ocelot.Infrastructure.Extensions;
 
 namespace Ocelot.Responder.Middleware
 {
@@ -13,51 +13,42 @@ namespace Ocelot.Responder.Middleware
     /// </summary>
     public class ResponderMiddleware : OcelotMiddleware
     {
-        private readonly RequestDelegate _next;
+        private readonly OcelotRequestDelegate _next;
         private readonly IHttpResponder _responder;
         private readonly IErrorsToHttpStatusCodeMapper _codeMapper;
-        private readonly IOcelotLogger _logger;
 
-        public ResponderMiddleware(RequestDelegate next, 
+        public ResponderMiddleware(OcelotRequestDelegate next, 
             IHttpResponder responder,
             IOcelotLoggerFactory loggerFactory,
-            IRequestScopedDataRepository requestScopedDataRepository, 
-            IErrorsToHttpStatusCodeMapper codeMapper)
-            :base(requestScopedDataRepository)
+            IErrorsToHttpStatusCodeMapper codeMapper
+           )
+            :base(loggerFactory.CreateLogger<ResponderMiddleware>())
         {
             _next = next;
             _responder = responder;
             _codeMapper = codeMapper;
-            _logger = loggerFactory.CreateLogger<ResponderMiddleware>();
-
         }
 
-        public async Task Invoke(HttpContext context)
-        {
-            _logger.TraceMiddlewareEntry();
-            _logger.TraceInvokeNext();
-                await _next.Invoke(context);
-            _logger.TraceInvokeNextCompleted();
+        public async Task Invoke(DownstreamContext context)
+        {           
+            await _next.Invoke(context);
 
-            if (PipelineError)
+            if (context.IsError)
             {
-                var errors = PipelineErrors;
-                _logger.LogError($"{errors.Count} pipeline errors found in {MiddlwareName}. Setting error response status code");
-
-                SetErrorResponse(context, errors);
+                Logger.LogWarning($"{context.Errors.ToErrorString()} errors found in {MiddlewareName}. Setting error response for request path:{context.HttpContext.Request.Path}, request method: {context.HttpContext.Request.Method}");
+                
+                SetErrorResponse(context.HttpContext, context.Errors);
             }
             else
             {
-                _logger.LogDebug("no pipeline errors, setting and returning completed response");
-                await _responder.SetResponseOnHttpContext(context, HttpResponseMessage);
+                Logger.LogDebug("no pipeline errors, setting and returning completed response");
+                await _responder.SetResponseOnHttpContext(context.HttpContext, context.DownstreamResponse);
             }
-            _logger.TraceMiddlewareCompleted();
         }
 
         private void SetErrorResponse(HttpContext context, List<Error> errors)
         {
             var statusCode = _codeMapper.Map(errors);
-
             _responder.SetErrorResponseOnContext(context, statusCode);
         }
     }

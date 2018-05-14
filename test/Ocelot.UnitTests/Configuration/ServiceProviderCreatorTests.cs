@@ -10,8 +10,7 @@ namespace Ocelot.UnitTests.Configuration
 {
     public class ServiceProviderCreatorTests
     {
-        private ServiceProviderConfigurationCreator _creator;
-        private FileReRoute _reRoute;
+        private readonly ServiceProviderConfigurationCreator _creator;
         private FileGlobalConfiguration _globalConfig;
         private ServiceProviderConfiguration _result;
 
@@ -23,34 +22,30 @@ namespace Ocelot.UnitTests.Configuration
         [Fact]
         public void should_create_service_provider_config()
         {
-            var reRoute = new FileReRoute();
-            
             var globalConfig = new FileGlobalConfiguration
             {
                 ServiceDiscoveryProvider = new FileServiceDiscoveryProvider
                 {
-                    Provider = "consul",
                     Host = "127.0.0.1",
-                    Port = 1234
+                    Port = 1234,
+                    Type = "ServiceFabric",
+                    Token = "testtoken",
+                    ConfigurationKey = "woo"
                 }
             };
 
             var expected = new ServiceProviderConfigurationBuilder()
-                .WithServiceDiscoveryProvider("consul")
-                .WithServiceDiscoveryProviderHost("127.0.0.1")
-                .WithServiceDiscoveryProviderPort(1234)
+                .WithHost("127.0.0.1")
+                .WithPort(1234)
+                .WithType("ServiceFabric")
+                .WithToken("testtoken")
+                .WithConfigurationKey("woo")
                 .Build();
 
-            this.Given(x => x.GivenTheFollowingReRoute(reRoute))
-                .And(x => x.GivenTheFollowingGlobalConfig(globalConfig))
+            this.Given(x => x.GivenTheFollowingGlobalConfig(globalConfig))
                 .When(x => x.WhenICreate())
                 .Then(x => x.ThenTheConfigIs(expected))
                 .BDDfy();
-        }
-
-        private void GivenTheFollowingReRoute(FileReRoute fileReRoute)
-        {
-            _reRoute = fileReRoute;
         }
 
         private void GivenTheFollowingGlobalConfig(FileGlobalConfiguration fileGlobalConfig)
@@ -60,17 +55,16 @@ namespace Ocelot.UnitTests.Configuration
 
         private void WhenICreate()
         {
-            _result = _creator.Create(_reRoute, _globalConfig);
+            _result = _creator.Create(_globalConfig);
         }
 
         private void ThenTheConfigIs(ServiceProviderConfiguration expected)
         {
-            _result.DownstreamHost.ShouldBe(expected.DownstreamHost);
-            _result.DownstreamPort.ShouldBe(expected.DownstreamPort);
-            _result.ServiceDiscoveryProvider.ShouldBe(expected.ServiceDiscoveryProvider);
-            _result.ServiceName.ShouldBe(expected.ServiceName);
-            _result.ServiceProviderHost.ShouldBe(expected.ServiceProviderHost);
-            _result.ServiceProviderPort.ShouldBe(expected.ServiceProviderPort);
+            _result.Host.ShouldBe(expected.Host);
+            _result.Port.ShouldBe(expected.Port);
+            _result.Token.ShouldBe(expected.Token);
+            _result.Type.ShouldBe(expected.Type);
+            _result.ConfigurationKey.ShouldBe(expected.ConfigurationKey);
         }
     }
 }

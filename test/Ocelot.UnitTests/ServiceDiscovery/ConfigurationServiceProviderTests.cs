@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Ocelot.ServiceDiscovery;
+using Ocelot.ServiceDiscovery.Providers;
 using Ocelot.Values;
 using Shouldly;
 using TestStack.BDDfy;
@@ -16,7 +17,7 @@ namespace Ocelot.UnitTests.ServiceDiscovery
         [Fact]
         public void should_return_services()
         {
-            var hostAndPort = new HostAndPort("127.0.0.1", 80);
+            var hostAndPort = new ServiceHostAndPort("127.0.0.1", 80);
 
             var services = new List<Service>
             {

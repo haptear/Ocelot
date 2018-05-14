@@ -1,12 +1,9 @@
 ﻿using System.Collections.Generic;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Ocelot.Authentication.Handler.Factory;
+using Microsoft.AspNetCore.Authentication;
 using Ocelot.Configuration;
 using Ocelot.Errors;
 using Ocelot.Infrastructure.Extensions;
-using Ocelot.Infrastructure.RequestData;
 using Ocelot.Logging;
 using Ocelot.Middleware;
 
@@ -14,84 +11,51 @@ namespace Ocelot.Authentication.Middleware
 {
     public class AuthenticationMiddleware : OcelotMiddleware
     {
-        private readonly RequestDelegate _next;
-        private readonly IApplicationBuilder _app;
-        private readonly IAuthenticationHandlerFactory _authHandlerFactory;
-        private readonly IOcelotLogger _logger;
+        private readonly OcelotRequestDelegate _next;
 
-        public AuthenticationMiddleware(RequestDelegate next,
-            IApplicationBuilder app,
-            IRequestScopedDataRepository requestScopedDataRepository,
-            IAuthenticationHandlerFactory authHandlerFactory,
+        public AuthenticationMiddleware(OcelotRequestDelegate next,
             IOcelotLoggerFactory loggerFactory)
-            : base(requestScopedDataRepository)
+            : base(loggerFactory.CreateLogger<AuthenticationMiddleware>())
         {
             _next = next;
-            _authHandlerFactory = authHandlerFactory;
-            _app = app;
-            _logger = loggerFactory.CreateLogger<AuthenticationMiddleware>();
         }
 
-        public async Task Invoke(HttpContext context)
+        public async Task Invoke(DownstreamContext context)
         {
-            _logger.TraceMiddlewareEntry();
-
-            if (IsAuthenticatedRoute(DownstreamRoute.ReRoute))
+            if (IsAuthenticatedRoute(context.DownstreamReRoute))
             {
-                _logger.LogDebug($"{context.Request.Path} is an authenticated route. {MiddlwareName} checking if client is authenticated");
+                Logger.LogInformation($"{context.HttpContext.Request.Path} is an authenticated route. {MiddlewareName} checking if client is authenticated");
+                
+                var result = await context.HttpContext.AuthenticateAsync(context.DownstreamReRoute.AuthenticationOptions.AuthenticationProviderKey);
+                
+                context.HttpContext.User = result.Principal;
 
-                var authenticationHandler = _authHandlerFactory.Get(_app, DownstreamRoute.ReRoute.AuthenticationOptions);
-
-                if (authenticationHandler.IsError)
+                if (context.HttpContext.User.Identity.IsAuthenticated)
                 {
-                    _logger.LogError($"Error getting authentication handler for {context.Request.Path}. {authenticationHandler.Errors.ToErrorString()}");
-                    SetPipelineError(authenticationHandler.Errors);
-                    _logger.TraceMiddlewareCompleted();
-                    return;
-                }
-
-                await authenticationHandler.Data.Handler.Handle(context);
-
-
-                if (context.User.Identity.IsAuthenticated)
-                {
-                    _logger.LogDebug($"Client has been authenticated for {context.Request.Path}");
-
-                    _logger.TraceInvokeNext();
-                        await _next.Invoke(context);
-                    _logger.TraceInvokeNextCompleted();
-                    _logger.TraceMiddlewareCompleted();
+                    Logger.LogInformation($"Client has been authenticated for {context.HttpContext.Request.Path}");
+                    await _next.Invoke(context);
                 }
                 else
                 {
-                    var error = new List<Error>
-                    {
-                        new UnauthenticatedError(
-                            $"Request for authenticated route {context.Request.Path} by {context.User.Identity.Name} was unauthenticated")
-                    };
+                    var error = new UnauthenticatedError(
+                        $"Request for authenticated route {context.HttpContext.Request.Path} by {context.HttpContext.User.Identity.Name} was unauthenticated");
 
-                    _logger.LogError($"Client has NOT been authenticated for {context.Request.Path} and pipeline error set. {error.ToErrorString()}");
-                    SetPipelineError(error);
-
-                    _logger.TraceMiddlewareCompleted();
-                    return;
+                    Logger.LogWarning($"Client has NOT been authenticated for {context.HttpContext.Request.Path} and pipeline error set. {error}");
+                    
+                    SetPipelineError(context, error);
                 }
             }
             else
             {
-                _logger.LogTrace($"No authentication needed for {context.Request.Path}");
+                Logger.LogInformation($"No authentication needed for {context.HttpContext.Request.Path}");
 
-                _logger.TraceInvokeNext();
-                    await _next.Invoke(context);
-                _logger.TraceInvokeNextCompleted();
-                _logger.TraceMiddlewareCompleted();
+                await _next.Invoke(context);
             }
         }
 
-        private static bool IsAuthenticatedRoute(ReRoute reRoute)
+        private static bool IsAuthenticatedRoute(DownstreamReRoute reRoute)
         {
             return reRoute.IsAuthenticated;
         }
     }
 }
-

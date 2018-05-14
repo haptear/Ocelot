@@ -31,10 +31,16 @@ namespace Ocelot.AcceptanceTests
                         {
                             DownstreamPathTemplate = "/",
                             UpstreamPathTemplate = "/",
-                            UpstreamHttpMethod = "Get",
-                            DownstreamPort = 53876,
+                            UpstreamHttpMethod = new List<string> { "Get" },
+                            DownstreamHostAndPorts = new List<FileHostAndPort>
+                            {
+                                new FileHostAndPort
+                                {
+                                    Host = "localhost",
+                                    Port = 53876,
+                                }
+                            },
                             DownstreamScheme = "http",
-                            DownstreamHost = "localhost"
                         }
                     }
             };

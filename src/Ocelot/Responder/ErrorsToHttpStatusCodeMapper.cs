@@ -15,6 +15,7 @@ namespace Ocelot.Responder
 
             if (errors.Any(e => e.Code == OcelotErrorCode.UnauthorizedError 
                 || e.Code == OcelotErrorCode.ClaimValueNotAuthorisedError
+                || e.Code == OcelotErrorCode.ScopeNotAuthorisedError
                 || e.Code == OcelotErrorCode.UserDoesNotHaveClaimError
                 || e.Code == OcelotErrorCode.CannotFindClaimError))
             {
@@ -29,6 +30,11 @@ namespace Ocelot.Responder
             if (errors.Any(e => e.Code == OcelotErrorCode.UnableToFindDownstreamRouteError))
             {
                 return 404;
+            }
+
+            if (errors.Any(e => e.Code == OcelotErrorCode.UnableToCompleteRequestError))
+            {
+                return 500;
             }
 
             return 404;

@@ -5,22 +5,18 @@ namespace Ocelot.Configuration.Creator
 {
     public class ServiceProviderConfigurationCreator : IServiceProviderConfigurationCreator
     {
-        public ServiceProviderConfiguration Create(FileReRoute fileReRoute, FileGlobalConfiguration globalConfiguration)
+        public ServiceProviderConfiguration Create(FileGlobalConfiguration globalConfiguration)
         {
-            var useServiceDiscovery = !string.IsNullOrEmpty(fileReRoute.ServiceName)
-                && !string.IsNullOrEmpty(globalConfiguration?.ServiceDiscoveryProvider?.Provider);
-
+            //todo log or return error here dont just default to something that wont work..
             var serviceProviderPort = globalConfiguration?.ServiceDiscoveryProvider?.Port ?? 0;
 
             return new ServiceProviderConfigurationBuilder()
-                    .WithServiceName(fileReRoute.ServiceName)
-                    .WithDownstreamHost(fileReRoute.DownstreamHost)
-                    .WithDownstreamPort(fileReRoute.DownstreamPort)
-                    .WithUseServiceDiscovery(useServiceDiscovery)
-                    .WithServiceDiscoveryProvider(globalConfiguration?.ServiceDiscoveryProvider?.Provider)
-                    .WithServiceDiscoveryProviderHost(globalConfiguration?.ServiceDiscoveryProvider?.Host)
-                    .WithServiceDiscoveryProviderPort(serviceProviderPort)
-                    .Build();
+                .WithHost(globalConfiguration?.ServiceDiscoveryProvider?.Host)
+                .WithPort(serviceProviderPort)
+                .WithType(globalConfiguration?.ServiceDiscoveryProvider?.Type)
+                .WithToken(globalConfiguration?.ServiceDiscoveryProvider?.Token)
+                .WithConfigurationKey(globalConfiguration?.ServiceDiscoveryProvider?.ConfigurationKey)
+                .Build();
         }
     }
 }

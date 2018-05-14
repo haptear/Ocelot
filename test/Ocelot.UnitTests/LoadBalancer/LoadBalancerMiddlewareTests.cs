@@ -1,83 +1,67 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Moq;
-using Ocelot.Configuration.Builder;
-using Ocelot.DownstreamRouteFinder;
-using Ocelot.Errors;
-using Ocelot.Infrastructure.RequestData;
-using Ocelot.LoadBalancer.LoadBalancers;
-using Ocelot.LoadBalancer.Middleware;
-using Ocelot.Logging;
-using Ocelot.Responses;
-using Ocelot.Values;
-using TestStack.BDDfy;
-using Xunit;
-using Shouldly;
+using Ocelot.Middleware;
 
 namespace Ocelot.UnitTests.LoadBalancer
 {
+    using System.Collections.Generic;
+    using System.Net.Http;
+    using System.Threading.Tasks;
+    using Microsoft.AspNetCore.Http;
+    using Moq;
+    using Ocelot.Configuration;
+    using Ocelot.Configuration.Builder;
+    using Ocelot.Errors;
+    using Ocelot.LoadBalancer.LoadBalancers;
+    using Ocelot.LoadBalancer.Middleware;
+    using Ocelot.Logging;
+    using Ocelot.Request.Middleware;
+    using Ocelot.Responses;
+    using Ocelot.Values;
+    using Shouldly;
+    using TestStack.BDDfy;
+    using Xunit;
+
     public class LoadBalancerMiddlewareTests
     {
         private readonly Mock<ILoadBalancerHouse> _loadBalancerHouse;
-        private readonly Mock<IRequestScopedDataRepository> _scopedRepository;
         private readonly Mock<ILoadBalancer> _loadBalancer;
-        private readonly string _url;
-        private readonly TestServer _server;
-        private readonly HttpClient _client;
-        private HttpResponseMessage _result;
-        private HostAndPort _hostAndPort;
-        private OkResponse<DownstreamRoute> _downstreamRoute;
+        private ServiceHostAndPort _hostAndPort;
         private ErrorResponse<ILoadBalancer> _getLoadBalancerHouseError;
-        private ErrorResponse<HostAndPort> _getHostAndPortError;
+        private ErrorResponse<ServiceHostAndPort> _getHostAndPortError;
         private HttpRequestMessage _downstreamRequest;
+        private ServiceProviderConfiguration _config;
+        private Mock<IOcelotLoggerFactory> _loggerFactory;
+        private Mock<IOcelotLogger> _logger;
+        private LoadBalancingMiddleware _middleware;
+        private DownstreamContext _downstreamContext;
+        private OcelotRequestDelegate _next;
 
         public LoadBalancerMiddlewareTests()
         {
-            _url = "http://localhost:51879";
             _loadBalancerHouse = new Mock<ILoadBalancerHouse>();
-            _scopedRepository = new Mock<IRequestScopedDataRepository>();
             _loadBalancer = new Mock<ILoadBalancer>();
             _loadBalancerHouse = new Mock<ILoadBalancerHouse>();
-            var builder = new WebHostBuilder()
-              .ConfigureServices(x =>
-              {
-                  x.AddSingleton<IOcelotLoggerFactory, AspDotNetLoggerFactory>();
-                  x.AddLogging();
-                  x.AddSingleton(_loadBalancerHouse.Object);
-                  x.AddSingleton(_scopedRepository.Object);
-              })
-              .UseUrls(_url)
-              .UseKestrel()
-              .UseContentRoot(Directory.GetCurrentDirectory())
-              .UseIISIntegration()
-              .UseUrls(_url)
-              .Configure(app =>
-              {
-                  app.UseLoadBalancingMiddleware();
-              });
-
-            _downstreamRequest = new HttpRequestMessage(HttpMethod.Get, "");
-            _scopedRepository
-                .Setup(sr => sr.Get<HttpRequestMessage>("DownstreamRequest"))
-                .Returns(new OkResponse<HttpRequestMessage>(_downstreamRequest));
-            _server = new TestServer(builder);
-            _client = _server.CreateClient();
+            _downstreamRequest = new HttpRequestMessage(HttpMethod.Get, "http://test.com/");
+            _downstreamContext = new DownstreamContext(new DefaultHttpContext());
+            _loggerFactory = new Mock<IOcelotLoggerFactory>();
+            _logger = new Mock<IOcelotLogger>();
+            _loggerFactory.Setup(x => x.CreateLogger<LoadBalancingMiddleware>()).Returns(_logger.Object);
+            _next = context => Task.CompletedTask;
+            _downstreamContext.DownstreamRequest = new DownstreamRequest(_downstreamRequest);
         }
 
         [Fact]
         public void should_call_scoped_data_repository_correctly()
         {
-            var downstreamRoute = new DownstreamRoute(new List<Ocelot.DownstreamRouteFinder.UrlMatcher.UrlPathPlaceholderNameAndValue>(),
-                new ReRouteBuilder()
-                    .WithUpstreamHttpMethod("Get")
-                    .Build());
+            var downstreamRoute = new DownstreamReRouteBuilder()
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
+                    .Build();
+
+            var serviceProviderConfig = new ServiceProviderConfigurationBuilder()
+                .Build();
 
             this.Given(x => x.GivenTheDownStreamUrlIs("http://my.url/abc?q=123"))
-                .And(x => x.GivenTheDownStreamRouteIs(downstreamRoute))
+                .And(x => GivenTheConfigurationIs(serviceProviderConfig))
+                .And(x => x.GivenTheDownStreamRouteIs(downstreamRoute, new List<Ocelot.DownstreamRouteFinder.UrlMatcher.PlaceholderNameAndValue>()))
                 .And(x => x.GivenTheLoadBalancerHouseReturns())
                 .And(x => x.GivenTheLoadBalancerReturns())
                 .When(x => x.WhenICallTheMiddleware())
@@ -88,13 +72,16 @@ namespace Ocelot.UnitTests.LoadBalancer
         [Fact]
         public void should_set_pipeline_error_if_cannot_get_load_balancer()
         {         
-            var downstreamRoute = new DownstreamRoute(new List<Ocelot.DownstreamRouteFinder.UrlMatcher.UrlPathPlaceholderNameAndValue>(),
-                new ReRouteBuilder()
-                    .WithUpstreamHttpMethod("Get")
-                    .Build());
+            var downstreamRoute = new DownstreamReRouteBuilder()
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
+                    .Build();
+
+            var serviceProviderConfig = new ServiceProviderConfigurationBuilder()
+                .Build();
 
             this.Given(x => x.GivenTheDownStreamUrlIs("http://my.url/abc?q=123"))
-                .And(x => x.GivenTheDownStreamRouteIs(downstreamRoute))
+                .And(x => GivenTheConfigurationIs(serviceProviderConfig))
+                .And(x => x.GivenTheDownStreamRouteIs(downstreamRoute, new List<Ocelot.DownstreamRouteFinder.UrlMatcher.PlaceholderNameAndValue>()))
                 .And(x => x.GivenTheLoadBalancerHouseReturnsAnError())
                 .When(x => x.WhenICallTheMiddleware())
                 .Then(x => x.ThenAnErrorStatingLoadBalancerCouldNotBeFoundIsSetOnPipeline())
@@ -104,13 +91,16 @@ namespace Ocelot.UnitTests.LoadBalancer
         [Fact]
         public void should_set_pipeline_error_if_cannot_get_least()
         {
-            var downstreamRoute = new DownstreamRoute(new List<Ocelot.DownstreamRouteFinder.UrlMatcher.UrlPathPlaceholderNameAndValue>(),
-                new ReRouteBuilder()
-                    .WithUpstreamHttpMethod("Get")
-                    .Build());
+            var downstreamRoute = new DownstreamReRouteBuilder()
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
+                    .Build();
+                
+             var serviceProviderConfig = new ServiceProviderConfigurationBuilder()
+                .Build();
 
             this.Given(x => x.GivenTheDownStreamUrlIs("http://my.url/abc?q=123"))
-                .And(x => x.GivenTheDownStreamRouteIs(downstreamRoute))
+                .And(x => GivenTheConfigurationIs(serviceProviderConfig))
+                .And(x => x.GivenTheDownStreamRouteIs(downstreamRoute, new List<Ocelot.DownstreamRouteFinder.UrlMatcher.PlaceholderNameAndValue>()))
                 .And(x => x.GivenTheLoadBalancerHouseReturns())
                 .And(x => x.GivenTheLoadBalancerReturnsAnError())
                 .When(x => x.WhenICallTheMiddleware())
@@ -118,42 +108,52 @@ namespace Ocelot.UnitTests.LoadBalancer
                 .BDDfy();
         }
 
+        private void WhenICallTheMiddleware()
+        {
+            _middleware = new LoadBalancingMiddleware(_next, _loggerFactory.Object, _loadBalancerHouse.Object);
+            _middleware.Invoke(_downstreamContext).GetAwaiter().GetResult();
+        }
+
+        private void GivenTheConfigurationIs(ServiceProviderConfiguration config)
+        {
+            _config = config;
+            _downstreamContext.ServiceProviderConfiguration = config;
+        }
+
         private void GivenTheDownStreamUrlIs(string downstreamUrl)
         {
             _downstreamRequest.RequestUri = new System.Uri(downstreamUrl);
+            _downstreamContext.DownstreamRequest = new DownstreamRequest(_downstreamRequest);
         }
 
         private void GivenTheLoadBalancerReturnsAnError()
         {
-            _getHostAndPortError = new ErrorResponse<HostAndPort>(new List<Error>() { new ServicesAreNullError($"services were null for bah") });
+            _getHostAndPortError = new ErrorResponse<ServiceHostAndPort>(new List<Error>() { new ServicesAreNullError($"services were null for bah") });
              _loadBalancer
-                .Setup(x => x.Lease())
+                .Setup(x => x.Lease(It.IsAny<DownstreamContext>()))
                 .ReturnsAsync(_getHostAndPortError);
         }
 
         private void GivenTheLoadBalancerReturns()
         {
-            _hostAndPort = new HostAndPort("127.0.0.1", 80);
+            _hostAndPort = new ServiceHostAndPort("127.0.0.1", 80);
             _loadBalancer
-                .Setup(x => x.Lease())
-                .ReturnsAsync(new OkResponse<HostAndPort>(_hostAndPort));
+                .Setup(x => x.Lease(It.IsAny<DownstreamContext>()))
+                .ReturnsAsync(new OkResponse<ServiceHostAndPort>(_hostAndPort));
         }
 
-        private void GivenTheDownStreamRouteIs(DownstreamRoute downstreamRoute)
+        private void GivenTheDownStreamRouteIs(DownstreamReRoute downstreamRoute, List<Ocelot.DownstreamRouteFinder.UrlMatcher.PlaceholderNameAndValue> placeholder)
         {
-            _downstreamRoute = new OkResponse<DownstreamRoute>(downstreamRoute);
-            _scopedRepository
-                .Setup(x => x.Get<DownstreamRoute>(It.IsAny<string>()))
-                .Returns(_downstreamRoute);
+            _downstreamContext.TemplatePlaceholderNameAndValues = placeholder;
+            _downstreamContext.DownstreamReRoute = downstreamRoute;
         }
 
         private void GivenTheLoadBalancerHouseReturns()
         {
             _loadBalancerHouse
-                .Setup(x => x.Get(It.IsAny<string>()))
-                .Returns(new OkResponse<ILoadBalancer>(_loadBalancer.Object));
+                .Setup(x => x.Get(It.IsAny<DownstreamReRoute>(), It.IsAny<ServiceProviderConfiguration>()))
+                .ReturnsAsync(new OkResponse<ILoadBalancer>(_loadBalancer.Object));
         }
-
 
         private void GivenTheLoadBalancerHouseReturnsAnError()
         {
@@ -163,53 +163,31 @@ namespace Ocelot.UnitTests.LoadBalancer
             });
 
             _loadBalancerHouse
-                .Setup(x => x.Get(It.IsAny<string>()))
-                .Returns(_getLoadBalancerHouseError);
-        }
-
-        private void WhenICallTheMiddleware()
-        {
-            _result = _client.GetAsync(_url).Result;
+                .Setup(x => x.Get(It.IsAny<DownstreamReRoute>(), It.IsAny<ServiceProviderConfiguration>()))
+                .ReturnsAsync(_getLoadBalancerHouseError);
         }
 
         private void ThenAnErrorStatingLoadBalancerCouldNotBeFoundIsSetOnPipeline()
         {
-            _scopedRepository
-                .Verify(x => x.Add("OcelotMiddlewareError", true), Times.Once);
-
-            _scopedRepository
-                .Verify(x => x.Add("OcelotMiddlewareErrors", _getLoadBalancerHouseError.Errors), Times.Once);
+            _downstreamContext.IsError.ShouldBeTrue();
+            _downstreamContext.Errors.ShouldBe(_getLoadBalancerHouseError.Errors);
         }
 
-         private void ThenAnErrorSayingReleaseFailedIsSetOnThePipeline()
+        private void ThenAnErrorSayingReleaseFailedIsSetOnThePipeline()
         {
-            _scopedRepository
-                .Verify(x => x.Add("OcelotMiddlewareError", true), Times.Once);
-
-            _scopedRepository
-                .Verify(x => x.Add("OcelotMiddlewareErrors", It.IsAny<List<Error>>()), Times.Once);
+            _downstreamContext.IsError.ShouldBeTrue();
+            _downstreamContext.Errors.ShouldBe(It.IsAny<List<Error>>());
         }
 
-            private void ThenAnErrorStatingHostAndPortCouldNotBeFoundIsSetOnPipeline()
+        private void ThenAnErrorStatingHostAndPortCouldNotBeFoundIsSetOnPipeline()
         {
-            _scopedRepository
-                .Verify(x => x.Add("OcelotMiddlewareError", true), Times.Once);
-
-            _scopedRepository
-                .Verify(x => x.Add("OcelotMiddlewareErrors", _getHostAndPortError.Errors), Times.Once);
+            _downstreamContext.IsError.ShouldBeTrue();
+            _downstreamContext.Errors.ShouldBe(_getHostAndPortError.Errors);
         }
-
-
 
         private void ThenTheDownstreamUrlIsReplacedWith(string expectedUri)
         {
-            _downstreamRequest.RequestUri.OriginalString.ShouldBe(expectedUri);
-        }
-
-        public void Dispose()
-        {
-            _client.Dispose();
-            _server.Dispose();
+            _downstreamContext.DownstreamRequest.ToHttpRequestMessage().RequestUri.OriginalString.ShouldBe(expectedUri);
         }
     }
 }

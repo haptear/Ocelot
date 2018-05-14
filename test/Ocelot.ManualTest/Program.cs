@@ -1,26 +1,61 @@
-﻿using System.IO;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-
-namespace Ocelot.ManualTest
+﻿namespace Ocelot.ManualTest
 {
+    using System.IO;
+    using Microsoft.AspNetCore.Hosting;
+    using Microsoft.Extensions.Logging;
+    using Microsoft.Extensions.Configuration;
+    using Microsoft.Extensions.DependencyInjection;
+    using Ocelot.DependencyInjection;
+    using Ocelot.Middleware;
+
     public class Program
     {
         public static void Main(string[] args)
         {
-            IWebHostBuilder builder = new WebHostBuilder();
-            
-            builder.ConfigureServices(s => {
-                s.AddSingleton(builder);
-            });
-
-            builder.UseKestrel()
+            new WebHostBuilder()
+                .UseKestrel()
                 .UseContentRoot(Directory.GetCurrentDirectory())
-                .UseStartup<Startup>();
+                .ConfigureAppConfiguration((hostingContext, config) =>
+                {
+                    config
+                        .SetBasePath(hostingContext.HostingEnvironment.ContentRootPath)
+                        .AddJsonFile("appsettings.json", true, true)
+                        .AddJsonFile($"appsettings.{hostingContext.HostingEnvironment.EnvironmentName}.json", true, true)
+                        .AddJsonFile("ocelot.json")
+                        .AddEnvironmentVariables();
+                })
+                .ConfigureServices(s => {
+                     s.AddAuthentication()
+                        .AddJwtBearer("TestKey", x =>
+                        {
+                            x.Authority = "test";
+                            x.Audience = "test";
+                        });
 
-            var host = builder.Build();
-
-            host.Run();
+                    s.AddOcelot()
+                        .AddCacheManager(x =>
+                        {
+                            x.WithDictionaryHandle();
+                        })
+                      /*.AddOpenTracing(option =>
+                      {
+                          option.CollectorUrl = "http://localhost:9618";
+                          option.Service = "Ocelot.ManualTest";
+                      })*/
+                    .AddAdministration("/administration", "secret");
+                })
+                .ConfigureLogging((hostingContext, logging) =>
+                {
+                    logging.AddConfiguration(hostingContext.Configuration.GetSection("Logging"));
+                    logging.AddConsole();
+                })
+                .UseIISIntegration()
+                .Configure(app =>
+                {
+                    app.UseOcelot().Wait();
+                })
+                .Build()
+                .Run();                
         }
     }
 }

@@ -1,33 +1,32 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Ocelot.Configuration.File;
-using Ocelot.ManualTest;
 using Shouldly;
 using TestStack.BDDfy;
 using Xunit;
 using Microsoft.AspNetCore.Http;
 using System.Threading.Tasks;
-using System.Threading;
 using System.Collections.Concurrent;
+using CacheManager.Core;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Ocelot.DependencyInjection;
+using Ocelot.Middleware;
 
 namespace Ocelot.IntegrationTests
 {
     public class ThreadSafeHeadersTests : IDisposable
     {
         private readonly HttpClient _httpClient;
-        private HttpResponseMessage _response;
         private IWebHost _builder;
         private IWebHostBuilder _webHostBuilder;
         private readonly string _ocelotBaseUrl;
-        private BearerToken _token;
         private IWebHost _downstreamBuilder;
         private readonly Random _random;
         private readonly ConcurrentBag<ThreadSafeHeadersTestResult> _results;
@@ -52,16 +51,22 @@ namespace Ocelot.IntegrationTests
                         {
                             DownstreamPathTemplate = "/",
                             DownstreamScheme = "http",
-                            DownstreamHost = "localhost",
-                            DownstreamPort = 51879,
+                            DownstreamHostAndPorts = new List<FileHostAndPort>
+                            {
+                                new FileHostAndPort
+                                {
+                                    Host = "localhost",
+                                    Port = 51879,
+                                }
+                            },
                             UpstreamPathTemplate = "/",
-                            UpstreamHttpMethod = "Get",
+                            UpstreamHttpMethod = new List<string> { "Get" },
                         }
                     }
             };
 
             this.Given(x => GivenThereIsAConfiguration(configuration))
-               .And(x => GivenThereIsAServiceRunningOn("http://localhost:51879"))
+                .And(x => GivenThereIsAServiceRunningOn("http://localhost:51879"))
                 .And(x => GivenOcelotIsRunning())
                 .When(x => WhenIGetUrlOnTheApiGatewayMultipleTimesWithDifferentHeaderValues("/", 300))
                 .Then(x => ThenTheSameHeaderValuesAreReturnedByTheDownstreamService())
@@ -97,11 +102,34 @@ namespace Ocelot.IntegrationTests
                 .UseUrls(_ocelotBaseUrl)
                 .UseKestrel()
                 .UseContentRoot(Directory.GetCurrentDirectory())
+                .ConfigureAppConfiguration((hostingContext, config) =>
+                {
+                    config.SetBasePath(hostingContext.HostingEnvironment.ContentRootPath);
+                    var env = hostingContext.HostingEnvironment;
+                    config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+                        .AddJsonFile($"appsettings.{env.EnvironmentName}.json", optional: true, reloadOnChange: true);
+                    config.AddJsonFile("ocelot.json");
+                    config.AddEnvironmentVariables();
+                })
                 .ConfigureServices(x =>
                 {
-                    x.AddSingleton(_webHostBuilder);
+                    Action<ConfigurationBuilderCachePart> settings = (s) =>
+                    {
+                        s.WithMicrosoftLogging(log =>
+                            {
+                                log.AddConsole(LogLevel.Debug);
+                            })
+                            .WithDictionaryHandle();
+                    };
+
+                    x.AddOcelot()
+                        .AddCacheManager(settings)
+                        .AddAdministration("/administration", "secret");
                 })
-                .UseStartup<Startup>();
+                .Configure(app =>
+                {
+                    app.UseOcelot().Wait();
+                });
 
             _builder = _webHostBuilder.Build();
 
@@ -110,7 +138,7 @@ namespace Ocelot.IntegrationTests
 
         private void GivenThereIsAConfiguration(FileConfiguration fileConfiguration)
         {
-            var configurationPath = $"{Directory.GetCurrentDirectory()}/configuration.json";
+            var configurationPath = $"{Directory.GetCurrentDirectory()}/ocelot.json";
 
             var jsonConfiguration = JsonConvert.SerializeObject(fileConfiguration);
 
@@ -123,7 +151,7 @@ namespace Ocelot.IntegrationTests
 
             var text = File.ReadAllText(configurationPath);
 
-            configurationPath = $"{AppContext.BaseDirectory}/configuration.json";
+            configurationPath = $"{AppContext.BaseDirectory}/ocelot.json";
 
             if (File.Exists(configurationPath))
             {
@@ -135,7 +163,7 @@ namespace Ocelot.IntegrationTests
             text = File.ReadAllText(configurationPath);
         }
 
-        public void WhenIGetUrlOnTheApiGatewayMultipleTimesWithDifferentHeaderValues(string url, int times)
+        private void WhenIGetUrlOnTheApiGatewayMultipleTimesWithDifferentHeaderValues(string url, int times)
         {
             var tasks = new Task[times];
 
@@ -167,6 +195,7 @@ namespace Ocelot.IntegrationTests
                 result.Result.ShouldBe(result.Random);
             }
         }
+
         public void Dispose()
         {
             _builder?.Dispose();
@@ -180,7 +209,6 @@ namespace Ocelot.IntegrationTests
             {
                 Result = result;
                 Random = random;
-
             }
 
             public int Result { get; private set; }

@@ -1,40 +1,89 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Threading.Tasks;
+using Ocelot.Configuration;
 using Ocelot.Logging;
-using Ocelot.Requester.QoS;
+using Ocelot.Middleware;
 
 namespace Ocelot.Requester
 {
-    internal class HttpClientBuilder : IHttpClientBuilder
+    public class HttpClientBuilder : IHttpClientBuilder
     {
-        private readonly Dictionary<int, Func<DelegatingHandler>> _handlers = new Dictionary<int, Func<DelegatingHandler>>();
+        private readonly IDelegatingHandlerHandlerFactory _factory;
+        private readonly IHttpClientCache _cacheHandlers;
+        private readonly IOcelotLogger _logger;
+        private string _cacheKey;
+        private HttpClient _httpClient;
+        private IHttpClient _client;
+        private readonly TimeSpan _defaultTimeout;
 
-        public  IHttpClientBuilder WithQos(IQoSProvider qosProvider, IOcelotLogger logger)
+        public HttpClientBuilder(
+            IDelegatingHandlerHandlerFactory factory, 
+            IHttpClientCache cacheHandlers, 
+            IOcelotLogger logger)
         {
-            _handlers.Add(5000, () => new PollyCircuitBreakingDelegatingHandler(qosProvider, logger));
+            _factory = factory;
+            _cacheHandlers = cacheHandlers;
+            _logger = logger;
 
-            return this;
-        }  
-
-        public IHttpClient Create()
-        {
-            var httpclientHandler = new HttpClientHandler();
-            
-            var client = new HttpClient(CreateHttpMessageHandler(httpclientHandler));                
-            
-            return new HttpClientWrapper(client);
+            // This is hardcoded at the moment but can easily be added to configuration
+            // if required by a user request.
+            _defaultTimeout = TimeSpan.FromSeconds(90);
         }
 
-        private HttpMessageHandler CreateHttpMessageHandler(HttpMessageHandler httpMessageHandler)
-        {            
-   
-            _handlers
-                .OrderByDescending(handler => handler.Key)
-                .Select(handler => handler.Value)
+        public IHttpClient Create(DownstreamContext context)
+        {
+            _cacheKey = GetCacheKey(context);
+
+            var httpClient = _cacheHandlers.Get(_cacheKey);
+
+            if (httpClient != null)
+            {
+                return httpClient;
+            }
+
+            var httpclientHandler = new HttpClientHandler
+            {
+                AllowAutoRedirect = context.DownstreamReRoute.HttpHandlerOptions.AllowAutoRedirect,
+                UseCookies = context.DownstreamReRoute.HttpHandlerOptions.UseCookieContainer,
+                CookieContainer = new CookieContainer()
+            };
+
+            if(context.DownstreamReRoute.DangerousAcceptAnyServerCertificateValidator)
+            {
+                httpclientHandler.ServerCertificateCustomValidationCallback = (request, certificate, chain, errors) => true;
+
+                _logger
+                    .LogWarning($"You have ignored all SSL warnings by using DangerousAcceptAnyServerCertificateValidator for this DownstreamReRoute, UpstreamPathTemplate: {context.DownstreamReRoute.UpstreamPathTemplate}, DownstreamPathTemplate: {context.DownstreamReRoute.DownstreamPathTemplate}");
+            }
+
+            var timeout = context.DownstreamReRoute.QosOptionsOptions.TimeoutValue == 0
+                ? _defaultTimeout 
+                : TimeSpan.FromMilliseconds(context.DownstreamReRoute.QosOptionsOptions.TimeoutValue);
+
+            _httpClient = new HttpClient(CreateHttpMessageHandler(httpclientHandler, context.DownstreamReRoute))
+            {
+                Timeout = timeout
+            };
+
+            _client = new HttpClientWrapper(_httpClient);
+
+            return _client;
+        }
+
+        public void Save()
+        {
+            _cacheHandlers.Set(_cacheKey, _client, TimeSpan.FromHours(24));
+        }
+
+        private HttpMessageHandler CreateHttpMessageHandler(HttpMessageHandler httpMessageHandler, DownstreamReRoute request)
+        {
+            //todo handle error
+            var handlers = _factory.Get(request).Data;
+
+            handlers
+                .Select(handler => handler)
                 .Reverse()
                 .ToList()
                 .ForEach(handler =>
@@ -45,23 +94,14 @@ namespace Ocelot.Requester
                 });
             return httpMessageHandler;
         }
-    }
 
-    /// <summary>
-    /// This class was made to make unit testing easier when HttpClient is used.
-    /// </summary>
-    internal class HttpClientWrapper : IHttpClient
-    {
-        public HttpClient Client { get; }
-
-        public HttpClientWrapper(HttpClient client)
+        private string GetCacheKey(DownstreamContext request)
         {
-            Client = client;
-        }
+            var cacheKey = $"{request.DownstreamRequest.Method}:{request.DownstreamRequest.OriginalString}";
 
-        public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
-        {
-            return Client.SendAsync(request);
+            this._logger.LogDebug($"Cache key for request is {cacheKey}");
+
+            return cacheKey;
         }
     }
 }

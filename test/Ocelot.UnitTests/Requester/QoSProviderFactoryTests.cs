@@ -4,6 +4,7 @@ using Ocelot.Configuration.Builder;
 using Ocelot.Logging;
 using Ocelot.Requester.QoS;
 using Shouldly;
+using System.Collections.Generic;
 using TestStack.BDDfy;
 using Xunit;
 
@@ -12,7 +13,7 @@ namespace Ocelot.UnitTests.Requester
     public class QoSProviderFactoryTests
     {
         private readonly IQoSProviderFactory _factory;
-        private ReRoute _reRoute;
+        private DownstreamReRoute _reRoute;
         private IQoSProvider _result;
         private Mock<IOcelotLoggerFactory> _loggerFactory;
         private Mock<IOcelotLogger> _logger;
@@ -30,8 +31,8 @@ namespace Ocelot.UnitTests.Requester
         [Fact]
         public void should_return_no_qos_provider()
         {
-            var reRoute = new ReRouteBuilder()
-                .WithUpstreamHttpMethod("get")
+            var reRoute = new DownstreamReRouteBuilder()
+                .WithUpstreamHttpMethod(new List<string> { "get" })
                 .WithIsQos(false)
                 .Build();
 
@@ -50,8 +51,8 @@ namespace Ocelot.UnitTests.Requester
                 .WithExceptionsAllowedBeforeBreaking(100)
                 .Build();
 
-            var reRoute = new ReRouteBuilder()
-               .WithUpstreamHttpMethod("get")
+            var reRoute = new DownstreamReRouteBuilder()
+               .WithUpstreamHttpMethod(new List<string> { "get" })
                .WithIsQos(true)
                .WithQosOptions(qosOptions)
                .Build();
@@ -62,7 +63,7 @@ namespace Ocelot.UnitTests.Requester
                 .BDDfy();
         }
 
-        private void GivenAReRoute(ReRoute reRoute)
+        private void GivenAReRoute(DownstreamReRoute reRoute)
         {
             _reRoute = reRoute;
         }

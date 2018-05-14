@@ -27,9 +27,12 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
         {
             this.Given(x => x.GivenThereIsAUrlMatch(
                 new DownstreamRoute(
-                    new List<UrlPathPlaceholderNameAndValue>(), 
+                    new List<PlaceholderNameAndValue>(), 
                     new ReRouteBuilder()
-                        .WithUpstreamHttpMethod("Get")
+                        .WithDownstreamReRoute(new DownstreamReRouteBuilder()
+                            .WithUpstreamHttpMethod(new List<string> { "Get" })
+                            .Build())
+                        .WithUpstreamHttpMethod(new List<string> { "Get" })
                         .Build())))
                 .When(x => x.WhenIReplaceTheTemplateVariables())
                 .Then(x => x.ThenTheDownstreamUrlPathIsReturned(""))
@@ -41,10 +44,13 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
         {
             this.Given(x => x.GivenThereIsAUrlMatch(
                 new DownstreamRoute(
-                new List<UrlPathPlaceholderNameAndValue>(), 
+                new List<PlaceholderNameAndValue>(), 
                 new ReRouteBuilder()
-                    .WithDownstreamPathTemplate("/")
-                    .WithUpstreamHttpMethod("Get")
+                    .WithDownstreamReRoute(new DownstreamReRouteBuilder()
+                        .WithDownstreamPathTemplate("/")
+                        .WithUpstreamHttpMethod(new List<string> { "Get" })
+                        .Build())
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
                     .Build())))
                 .When(x => x.WhenIReplaceTheTemplateVariables())
                 .Then(x => x.ThenTheDownstreamUrlPathIsReturned("/"))
@@ -54,10 +60,13 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
         [Fact]
         public void can_replace_url_no_slash()
         {
-            this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(new List<UrlPathPlaceholderNameAndValue>(), 
+            this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(new List<PlaceholderNameAndValue>(), 
                 new ReRouteBuilder()
-                    .WithDownstreamPathTemplate("api")
-                    .WithUpstreamHttpMethod("Get")
+                    .WithDownstreamReRoute(new DownstreamReRouteBuilder()
+                        .WithDownstreamPathTemplate("api")
+                        .WithUpstreamHttpMethod(new List<string> { "Get" })
+                        .Build())
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
                     .Build())))
                 .When(x => x.WhenIReplaceTheTemplateVariables())
                 .Then(x => x.ThenTheDownstreamUrlPathIsReturned("api"))
@@ -67,10 +76,13 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
         [Fact]
         public void can_replace_url_one_slash()
         {
-            this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(new List<UrlPathPlaceholderNameAndValue>(), 
+            this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(new List<PlaceholderNameAndValue>(), 
                 new ReRouteBuilder()
-                    .WithDownstreamPathTemplate("api/")
-                    .WithUpstreamHttpMethod("Get")
+                    .WithDownstreamReRoute(new DownstreamReRouteBuilder()
+                        .WithDownstreamPathTemplate("api/")
+                        .WithUpstreamHttpMethod(new List<string> { "Get" })
+                        .Build())
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
                     .Build())))
                 .When(x => x.WhenIReplaceTheTemplateVariables())
                 .Then(x => x.ThenTheDownstreamUrlPathIsReturned("api/"))
@@ -80,10 +92,13 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
         [Fact]
         public void can_replace_url_multiple_slash()
         {
-            this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(new List<UrlPathPlaceholderNameAndValue>(), 
+            this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(new List<PlaceholderNameAndValue>(), 
                 new ReRouteBuilder()
-                    .WithDownstreamPathTemplate("api/product/products/")
-                    .WithUpstreamHttpMethod("Get")
+                    .WithDownstreamReRoute(new DownstreamReRouteBuilder()
+                        .WithDownstreamPathTemplate("api/product/products/")
+                        .WithUpstreamHttpMethod(new List<string> { "Get" })
+                        .Build())
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
                     .Build())))
                 .When(x => x.WhenIReplaceTheTemplateVariables())
                 .Then(x => x.ThenTheDownstreamUrlPathIsReturned("api/product/products/"))
@@ -93,15 +108,18 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
         [Fact]
         public void can_replace_url_one_template_variable()
         {
-            var templateVariables = new List<UrlPathPlaceholderNameAndValue>()
+            var templateVariables = new List<PlaceholderNameAndValue>()
             {
-                new UrlPathPlaceholderNameAndValue("{productId}", "1")
+                new PlaceholderNameAndValue("{productId}", "1")
             };
 
             this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(templateVariables, 
                 new ReRouteBuilder()
-                    .WithDownstreamPathTemplate("productservice/products/{productId}/")
-                    .WithUpstreamHttpMethod("Get")
+                    .WithDownstreamReRoute(new DownstreamReRouteBuilder()
+                        .WithDownstreamPathTemplate("productservice/products/{productId}/")
+                        .WithUpstreamHttpMethod(new List<string> { "Get" })
+                        .Build())
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
                     .Build())))
              .When(x => x.WhenIReplaceTheTemplateVariables())
              .Then(x => x.ThenTheDownstreamUrlPathIsReturned("productservice/products/1/"))
@@ -111,15 +129,18 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
         [Fact]
         public void can_replace_url_one_template_variable_with_path_after()
         {
-            var templateVariables = new List<UrlPathPlaceholderNameAndValue>()
+            var templateVariables = new List<PlaceholderNameAndValue>()
             {
-                new UrlPathPlaceholderNameAndValue("{productId}", "1")
+                new PlaceholderNameAndValue("{productId}", "1")
             };
 
             this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(templateVariables, 
                 new ReRouteBuilder()
-                    .WithDownstreamPathTemplate("productservice/products/{productId}/variants")
-                    .WithUpstreamHttpMethod("Get")
+                    .WithDownstreamReRoute(new DownstreamReRouteBuilder()
+                        .WithDownstreamPathTemplate("productservice/products/{productId}/variants")
+                        .WithUpstreamHttpMethod(new List<string> { "Get" })
+                        .Build())
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
                     .Build())))
              .When(x => x.WhenIReplaceTheTemplateVariables())
              .Then(x => x.ThenTheDownstreamUrlPathIsReturned("productservice/products/1/variants"))
@@ -129,16 +150,19 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
         [Fact]
         public void can_replace_url_two_template_variable()
         {
-            var templateVariables = new List<UrlPathPlaceholderNameAndValue>()
+            var templateVariables = new List<PlaceholderNameAndValue>()
             {
-                new UrlPathPlaceholderNameAndValue("{productId}", "1"),
-                new UrlPathPlaceholderNameAndValue("{variantId}", "12")
+                new PlaceholderNameAndValue("{productId}", "1"),
+                new PlaceholderNameAndValue("{variantId}", "12")
             };
 
             this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(templateVariables, 
                 new ReRouteBuilder()
-                    .WithDownstreamPathTemplate("productservice/products/{productId}/variants/{variantId}")
-                    .WithUpstreamHttpMethod("Get")
+                    .WithDownstreamReRoute(new DownstreamReRouteBuilder()
+                        .WithDownstreamPathTemplate("productservice/products/{productId}/variants/{variantId}")
+                        .WithUpstreamHttpMethod(new List<string> { "Get" })
+                        .Build())
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
                     .Build())))
              .When(x => x.WhenIReplaceTheTemplateVariables())
              .Then(x => x.ThenTheDownstreamUrlPathIsReturned("productservice/products/1/variants/12"))
@@ -148,17 +172,20 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
            [Fact]
         public void can_replace_url_three_template_variable()
         {
-            var templateVariables = new List<UrlPathPlaceholderNameAndValue>()
+            var templateVariables = new List<PlaceholderNameAndValue>()
             {
-                new UrlPathPlaceholderNameAndValue("{productId}", "1"),
-                new UrlPathPlaceholderNameAndValue("{variantId}", "12"),
-                new UrlPathPlaceholderNameAndValue("{categoryId}", "34")
+                new PlaceholderNameAndValue("{productId}", "1"),
+                new PlaceholderNameAndValue("{variantId}", "12"),
+                new PlaceholderNameAndValue("{categoryId}", "34")
             };
 
             this.Given(x => x.GivenThereIsAUrlMatch(new DownstreamRoute(templateVariables, 
                 new ReRouteBuilder()
-                .WithDownstreamPathTemplate("productservice/category/{categoryId}/products/{productId}/variants/{variantId}")
-                .WithUpstreamHttpMethod("Get")
+                    .WithDownstreamReRoute(new DownstreamReRouteBuilder()
+                        .WithDownstreamPathTemplate("productservice/category/{categoryId}/products/{productId}/variants/{variantId}")
+                        .WithUpstreamHttpMethod(new List<string> { "Get" })
+                        .Build())
+                    .WithUpstreamHttpMethod(new List<string> { "Get" })
                 .Build())))
              .When(x => x.WhenIReplaceTheTemplateVariables())
              .Then(x => x.ThenTheDownstreamUrlPathIsReturned("productservice/category/34/products/1/variants/12"))
@@ -172,7 +199,7 @@ namespace Ocelot.UnitTests.DownstreamUrlCreator.UrlTemplateReplacer
 
         private void WhenIReplaceTheTemplateVariables()
         {
-            _result = _downstreamPathReplacer.Replace(_downstreamRoute.ReRoute.DownstreamPathTemplate, _downstreamRoute.TemplatePlaceholderNameAndValues);
+            _result = _downstreamPathReplacer.Replace(_downstreamRoute.ReRoute.DownstreamReRoute[0].DownstreamPathTemplate, _downstreamRoute.TemplatePlaceholderNameAndValues);
         }
 
         private void ThenTheDownstreamUrlPathIsReturned(string expected)

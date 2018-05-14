@@ -17,6 +17,7 @@
         InstructionNotForClaimsError,
         UnauthorizedError,
         ClaimValueNotAuthorisedError,
+        ScopeNotAuthorisedError,
         UserDoesNotHaveClaimError,
         DownstreamPathTemplateContainsSchemeError,
         DownstreamPathNullOrEmptyError,
@@ -29,6 +30,12 @@
         RequestTimedOutError,
         UnableToFindQoSProviderError,
         UnableToSetConfigInConsulError,
-        UnmappableRequestError
+        UnmappableRequestError,
+        RateLimitOptionsError,
+        PathTemplateDoesntStartWithForwardSlash,
+        FileValidationFailedError,
+        UnableToFindDelegatingHandlerProviderError,
+        CouldNotFindPlaceholderError,
+        CouldNotFindAggregatorError
     }
 }

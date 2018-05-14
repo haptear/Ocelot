@@ -1,113 +1,102 @@
-﻿using System;
-using System.IO;
-using System.Net;
-using System.Net.Http;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Moq;
-using Ocelot.Infrastructure.RequestData;
-using Ocelot.Logging;
-using Ocelot.QueryStrings.Middleware;
-using Ocelot.Requester;
-using Ocelot.Requester.Middleware;
-using Ocelot.Requester.QoS;
-using Ocelot.Responder;
-using Ocelot.Responses;
-using TestStack.BDDfy;
-using Xunit;
-
 namespace Ocelot.UnitTests.Requester
 {
-    public class HttpRequesterMiddlewareTests : IDisposable
+    using Microsoft.AspNetCore.Http;
+    using System.Net.Http;
+    using Moq;
+    using Ocelot.Logging;
+    using Ocelot.Requester;
+    using Ocelot.Requester.Middleware;
+    using Ocelot.Responses;
+    using TestStack.BDDfy;
+    using Xunit;
+    using Shouldly;
+    using System.Threading.Tasks;
+    using Ocelot.Configuration.Builder;
+    using Ocelot.Middleware;
+    using System;
+    using System.Linq;
+    using Ocelot.UnitTests.Responder;
+
+    public class HttpRequesterMiddlewareTests
     {
         private readonly Mock<IHttpRequester> _requester;
-        private readonly Mock<IRequestScopedDataRepository> _scopedRepository;
-        private readonly string _url;
-        private readonly TestServer _server;
-        private readonly HttpClient _client;
-        private HttpResponseMessage _result;
-        private OkResponse<HttpResponseMessage> _response;
-        private OkResponse<Ocelot.Request.Request> _request;
+        private Response<HttpResponseMessage> _response;
+        private Mock<IOcelotLoggerFactory> _loggerFactory;
+        private Mock<IOcelotLogger> _logger;
+        private readonly HttpRequesterMiddleware _middleware;
+        private DownstreamContext _downstreamContext;
+        private OcelotRequestDelegate _next;
 
         public HttpRequesterMiddlewareTests()
         {
-            _url = "http://localhost:51879";
             _requester = new Mock<IHttpRequester>();
-            _scopedRepository = new Mock<IRequestScopedDataRepository>();
-            var builder = new WebHostBuilder()
-              .ConfigureServices(x =>
-              {
-                  x.AddSingleton<IOcelotLoggerFactory, AspDotNetLoggerFactory>();
-                  x.AddLogging();
-                  x.AddSingleton(_requester.Object);
-                  x.AddSingleton(_scopedRepository.Object);
-              })
-              .UseUrls(_url)
-              .UseKestrel()
-              .UseContentRoot(Directory.GetCurrentDirectory())
-              .UseIISIntegration()
-              .UseUrls(_url)
-              .Configure(app =>
-              {
-                  app.UseHttpRequesterMiddleware();
-              });
-
-            _server = new TestServer(builder);
-            _client = _server.CreateClient();
+            _loggerFactory = new Mock<IOcelotLoggerFactory>();
+            _logger = new Mock<IOcelotLogger>();
+            _loggerFactory.Setup(x => x.CreateLogger<HttpRequesterMiddleware>()).Returns(_logger.Object);
+            _next = context => Task.CompletedTask;
+            _middleware = new HttpRequesterMiddleware(_next, _loggerFactory.Object, _requester.Object);
         }
 
         [Fact]
-        public void should_call_scoped_data_repository_correctly()
+        public void should_call_services_correctly()
         {
-            this.Given(x => x.GivenTheRequestIs(new Ocelot.Request.Request(new HttpRequestMessage(),true, new NoQoSProvider())))
-                .And(x => x.GivenTheRequesterReturns(new HttpResponseMessage()))
-                .And(x => x.GivenTheScopedRepoReturns())
+            this.Given(x => x.GivenTheRequestIs())
+                .And(x => x.GivenTheRequesterReturns(new OkResponse<HttpResponseMessage>(new HttpResponseMessage())))
                 .When(x => x.WhenICallTheMiddleware())
-                .Then(x => x.ThenTheScopedRepoIsCalledCorrectly())
+                .Then(x => x.ThenTheDownstreamResponseIsSet())
                 .BDDfy();
         }
 
-        private void GivenTheRequesterReturns(HttpResponseMessage response)
+        [Fact]
+        public void should_set_error()
         {
-            _response = new OkResponse<HttpResponseMessage>(response);
-            _requester
-                .Setup(x => x.GetResponse(It.IsAny<Ocelot.Request.Request>()))
-                .ReturnsAsync(_response);
+            this.Given(x => x.GivenTheRequestIs())
+                .And(x => x.GivenTheRequesterReturns(new ErrorResponse<HttpResponseMessage>(new AnyError())))
+                .When(x => x.WhenICallTheMiddleware())
+                .Then(x => x.ThenTheErrorIsSet())
+                .BDDfy();
         }
 
-        private void GivenTheScopedRepoReturns()
+        private void ThenTheErrorIsSet()
         {
-            _scopedRepository
-                .Setup(x => x.Add(It.IsAny<string>(), _response.Data))
-                .Returns(new OkResponse());
-        }
-
-        private void ThenTheScopedRepoIsCalledCorrectly()
-        {
-            _scopedRepository
-                .Verify(x => x.Add("HttpResponseMessage", _response.Data), Times.Once());
+            _downstreamContext.IsError.ShouldBeTrue();
         }
 
         private void WhenICallTheMiddleware()
         {
-            _result = _client.GetAsync(_url).Result;
+            _middleware.Invoke(_downstreamContext).GetAwaiter().GetResult();
         }
 
-        private void GivenTheRequestIs(Ocelot.Request.Request request)
+        private void GivenTheRequestIs()
         {
-            _request = new OkResponse<Ocelot.Request.Request>(request);
-            _scopedRepository
-                .Setup(x => x.Get<Ocelot.Request.Request>(It.IsAny<string>()))
-                .Returns(_request);
+            _downstreamContext =
+                new DownstreamContext(new DefaultHttpContext())
+                {
+                    DownstreamReRoute = new DownstreamReRouteBuilder().Build()
+                };
         }
 
-        public void Dispose()
+        private void GivenTheRequesterReturns(Response<HttpResponseMessage> response)
         {
-            _client.Dispose();
-            _server.Dispose();
+            _response = response;
+
+            _requester
+                .Setup(x => x.GetResponse(It.IsAny<DownstreamContext>()))
+                .ReturnsAsync(_response);
+        }
+
+        private void ThenTheDownstreamResponseIsSet()
+        {
+            foreach (var httpResponseHeader in _response.Data.Headers)
+            {
+                if (_downstreamContext.DownstreamResponse.Headers.Any(x => x.Key == httpResponseHeader.Key))
+                {
+                    throw new Exception("Header in response not in downstreamresponse headers");
+                }
+            }
+
+            _downstreamContext.DownstreamResponse.Content.ShouldBe(_response.Data.Content);
+            _downstreamContext.DownstreamResponse.StatusCode.ShouldBe(_response.Data.StatusCode);
         }
     }
 }

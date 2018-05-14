@@ -1,47 +1,39 @@
 namespace Ocelot.Request.Middleware
 {
+    using System.Net.Http;
     using System.Threading.Tasks;
     using Microsoft.AspNetCore.Http;
-
+    using Ocelot.DownstreamRouteFinder.Middleware;
     using Ocelot.Infrastructure.RequestData;
     using Ocelot.Logging;
     using Ocelot.Middleware;
 
     public class DownstreamRequestInitialiserMiddleware : OcelotMiddleware
     {
-        private readonly RequestDelegate _next;
-        private readonly IOcelotLogger _logger;
+        private readonly OcelotRequestDelegate _next;
         private readonly Mapper.IRequestMapper _requestMapper;
 
-        public DownstreamRequestInitialiserMiddleware(RequestDelegate next,
+        public DownstreamRequestInitialiserMiddleware(OcelotRequestDelegate next,
             IOcelotLoggerFactory loggerFactory,
-            IRequestScopedDataRepository requestScopedDataRepository,
             Mapper.IRequestMapper requestMapper)
-            :base(requestScopedDataRepository)
+                :base(loggerFactory.CreateLogger<DownstreamRequestInitialiserMiddleware>())
         {
             _next = next;
-            _logger = loggerFactory.CreateLogger<DownstreamRequestInitialiserMiddleware>();
             _requestMapper = requestMapper;
         }
 
-        public async Task Invoke(HttpContext context)
+        public async Task Invoke(DownstreamContext context)
         {
-            _logger.LogDebug("started calling request builder middleware");
-
-            var downstreamRequest = await _requestMapper.Map(context.Request);
+            var downstreamRequest = await _requestMapper.Map(context.HttpContext.Request);
             if (downstreamRequest.IsError)
             {
-                SetPipelineError(downstreamRequest.Errors);
+                SetPipelineError(context, downstreamRequest.Errors);
                 return;
             }
 
-            SetDownstreamRequest(downstreamRequest.Data);
-
-            _logger.LogDebug("calling next middleware");
+            context.DownstreamRequest = new DownstreamRequest(downstreamRequest.Data);
 
             await _next.Invoke(context);
-
-            _logger.LogDebug("succesfully called next middleware");
         }
     }
 }

@@ -11,7 +11,7 @@ namespace Ocelot.UnitTests.Configuration
 {
     public class AuthenticationOptionsCreatorTests
     {
-        private AuthenticationOptionsCreator _authOptionsCreator;
+        private readonly AuthenticationOptionsCreator _authOptionsCreator;
         private FileReRoute _fileReRoute;
         private AuthenticationOptions _result;
 
@@ -27,27 +27,19 @@ namespace Ocelot.UnitTests.Configuration
             {
                 AuthenticationOptions = new FileAuthenticationOptions
                 {
-                    Provider = "Geoff",
-                    ProviderRootUrl = "http://www.bbc.co.uk/",
-					ApiName = "Laura",
-                    RequireHttps = true,
-					AllowedScopes = new List<string> {"cheese"},
-                    ApiSecret = "secret"
+                    AuthenticationProviderKey = "Test",
+                    AllowedScopes = new List<string> { "cheese" },
                 }
             };
 
             var expected = new AuthenticationOptionsBuilder()
-                    .WithProvider(fileReRoute.AuthenticationOptions?.Provider)
-                    .WithProviderRootUrl(fileReRoute.AuthenticationOptions?.ProviderRootUrl)
-                    .WithApiName(fileReRoute.AuthenticationOptions?.ApiName)
-                    .WithRequireHttps(fileReRoute.AuthenticationOptions.RequireHttps)
                     .WithAllowedScopes(fileReRoute.AuthenticationOptions?.AllowedScopes)
-                    .WithApiSecret(fileReRoute.AuthenticationOptions?.ApiSecret)
+                    .WithAuthenticationProviderKey("Test")
                     .Build();
 
             this.Given(x => x.GivenTheFollowing(fileReRoute))
                 .When(x => x.WhenICreateTheAuthenticationOptions())
-                .Then(x => x.ThenTheFollowingIsReturned(expected))
+                .Then(x => x.ThenTheFollowingConfigIsReturned(expected))
                 .BDDfy();
         }
 
@@ -61,14 +53,10 @@ namespace Ocelot.UnitTests.Configuration
             _result = _authOptionsCreator.Create(_fileReRoute);
         }
 
-        private void ThenTheFollowingIsReturned(AuthenticationOptions expected)
+        private void ThenTheFollowingConfigIsReturned(AuthenticationOptions expected)
         {
-            _result.AllowedScopes.ShouldBe(expected.AllowedScopes);
-            _result.Provider.ShouldBe(expected.Provider);
-            _result.ProviderRootUrl.ShouldBe(expected.ProviderRootUrl);
-            _result.RequireHttps.ShouldBe(expected.RequireHttps);
-            _result.ApiName.ShouldBe(expected.ApiName);
-            _result.ApiSecret.ShouldBe(expected.ApiSecret);
+           _result.AllowedScopes.ShouldBe(expected.AllowedScopes);
+            _result.AuthenticationProviderKey.ShouldBe(expected.AuthenticationProviderKey);
         }
     }
 }

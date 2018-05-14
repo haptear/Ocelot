@@ -1,108 +1,91 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
-using Moq;
-using Ocelot.Authentication.Handler;
-using Ocelot.Authentication.Handler.Factory;
-using Ocelot.Authentication.Middleware;
-using Ocelot.Cache.Middleware;
-using Ocelot.Configuration;
-using Ocelot.Configuration.Builder;
-using Ocelot.DownstreamRouteFinder;
-using Ocelot.DownstreamRouteFinder.UrlMatcher;
-using Ocelot.Infrastructure.RequestData;
-using Ocelot.Logging;
-using Ocelot.Responses;
-using Shouldly;
-using TestStack.BDDfy;
-using Xunit;
+﻿using Ocelot.Configuration;
+using Ocelot.Middleware;
 
 namespace Ocelot.UnitTests.Authentication
 {
-    public class AuthenticationMiddlewareTests : IDisposable
+    using System.Collections.Generic;
+    using System.IO;
+    using System.Text;
+    using System.Threading.Tasks;
+    using Microsoft.AspNetCore.Http;
+    using Moq;
+    using Ocelot.Authentication.Middleware;
+    using Ocelot.Configuration.Builder;
+    using Ocelot.Logging;
+    using Shouldly;
+    using TestStack.BDDfy;
+    using Xunit;
+
+    public class AuthenticationMiddlewareTests
     {
-        private readonly Mock<IRequestScopedDataRepository> _scopedRepository;
-        private readonly Mock<IAuthenticationHandlerFactory> _authFactory;
-        private readonly string _url;
-        private readonly TestServer _server;
-        private readonly HttpClient _client;
-        private HttpResponseMessage _result;
-        private OkResponse<DownstreamRoute> _downstreamRoute;
+        private AuthenticationMiddleware _middleware;
+        private Mock<IOcelotLoggerFactory> _factory;
+        private Mock<IOcelotLogger> _logger;
+        private OcelotRequestDelegate _next;
+        private DownstreamContext _downstreamContext;
 
         public AuthenticationMiddlewareTests()
         {
-            _url = "http://localhost:51879";
-            _scopedRepository = new Mock<IRequestScopedDataRepository>();
-            _authFactory = new Mock<IAuthenticationHandlerFactory>();
-            var builder = new WebHostBuilder()
-              .ConfigureServices(x =>
-              {
-                  x.AddSingleton<IOcelotLoggerFactory, AspDotNetLoggerFactory>();
-                  x.AddLogging();
-                  x.AddSingleton(_authFactory.Object);
-                  x.AddSingleton(_scopedRepository.Object);
-              })
-              .UseUrls(_url)
-              .UseKestrel()
-              .UseContentRoot(Directory.GetCurrentDirectory())
-              .UseIISIntegration()
-              .UseUrls(_url)
-              .Configure(app =>
-              {
-                  app.UseAuthenticationMiddleware();
-
-                  app.Run(async x =>
-                  {
-                      await x.Response.WriteAsync("The user is authenticated");
-                  });
-              });
-
-            _server = new TestServer(builder);
-            _client = _server.CreateClient();
+            _factory = new Mock<IOcelotLoggerFactory>();
+            _logger = new Mock<IOcelotLogger>();
+            _factory.Setup(x => x.CreateLogger<AuthenticationMiddleware>()).Returns(_logger.Object);
+            _downstreamContext = new DownstreamContext(new DefaultHttpContext());
         }
 
         [Fact]
         public void should_call_next_middleware_if_route_is_not_authenticated()
         {
-            this.Given(x => x.GivenTheDownStreamRouteIs(new DownstreamRoute(new List<UrlPathPlaceholderNameAndValue>(), new ReRouteBuilder()
-                                                                                                                            .WithUpstreamHttpMethod("Get")
-                                                                                                                            .Build())))
-                .When(x => x.WhenICallTheMiddleware())
-                .Then(x => x.ThenTheUserIsAuthenticated())
+            this.Given(x => GivenTheDownStreamRouteIs(
+                    new DownstreamReRouteBuilder().WithUpstreamHttpMethod(new List<string> { "Get" }).Build()))
+                .And(x => GivenTheTestServerPipelineIsConfigured())
+                .When(x => WhenICallTheMiddleware())
+                .Then(x => ThenTheUserIsAuthenticated())
                 .BDDfy();
-        }
-
-        private void ThenTheUserIsAuthenticated()
-        {
-            var content = _result.Content.ReadAsStringAsync().Result;
-            content.ShouldBe("The user is authenticated");
-        }
-
-        private void GivenTheDownStreamRouteIs(DownstreamRoute downstreamRoute)
-        {
-            _downstreamRoute = new OkResponse<DownstreamRoute>(downstreamRoute);
-            _scopedRepository
-                .Setup(x => x.Get<DownstreamRoute>(It.IsAny<string>()))
-                .Returns(_downstreamRoute);
         }
 
         private void WhenICallTheMiddleware()
         {
-            _result = _client.GetAsync(_url).Result;
+            _next = (context) => {
+                byte[] byteArray = Encoding.ASCII.GetBytes("The user is authenticated");
+                var stream = new MemoryStream(byteArray);
+                context.HttpContext.Response.Body = stream;
+                return Task.CompletedTask;
+            };
+            _middleware = new AuthenticationMiddleware(_next, _factory.Object);
+            _middleware.Invoke(_downstreamContext).GetAwaiter().GetResult();
         }
 
-
-        public void Dispose()
+        private void GivenTheTestServerPipelineIsConfigured()
         {
-            _client.Dispose();
-            _server.Dispose();
+            _next = (context) => {
+                byte[] byteArray = Encoding.ASCII.GetBytes("The user is authenticated");
+                var stream = new MemoryStream(byteArray);
+                context.HttpContext.Response.Body = stream;
+                return Task.CompletedTask;
+            };
+        }
+
+        private void ThenTheUserIsAuthenticated()
+        {
+            var content = _downstreamContext.HttpContext.Response.Body.AsString(); 
+            content.ShouldBe("The user is authenticated");
+        }
+
+        private void GivenTheDownStreamRouteIs(DownstreamReRoute downstreamRoute)
+        {
+            _downstreamContext.DownstreamReRoute = downstreamRoute;
+        }
+    }
+
+    public static class StreamExtensions
+    {
+        public static string AsString(this Stream stream)
+        {
+            using(var reader = new StreamReader(stream))
+            {
+                string text = reader.ReadToEnd();
+                return text;
+            }
         }
     }
 }

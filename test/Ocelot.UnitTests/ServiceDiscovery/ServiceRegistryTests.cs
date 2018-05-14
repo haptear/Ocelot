@@ -4,6 +4,7 @@ using Shouldly;
 using TestStack.BDDfy;
 using Xunit;
 
+// nothing in use
 namespace Ocelot.UnitTests.ServiceDiscovery
 {
     public class ServiceRegistryTests
@@ -28,6 +29,7 @@ namespace Ocelot.UnitTests.ServiceDiscovery
             .BDDfy();
         }
 
+        [Fact]
         public void should_lookup_service()
         {
             this.Given(x => x.GivenAServiceIsRegistered("product", "localhost:600", 80))
@@ -50,13 +52,13 @@ namespace Ocelot.UnitTests.ServiceDiscovery
 
         private void GivenAServiceIsRegistered(string name, string address, int port)
         {
-            _service = new Service(name, new HostAndPort(address, port), string.Empty, string.Empty, new string[0]);
+            _service = new Service(name, new ServiceHostAndPort(address, port), string.Empty, string.Empty, new string[0]);
             _serviceRepository.Set(_service);
         }
 
         private void GivenAServiceToRegister(string name, string address, int port)
         {
-            _service = new Service(name, new HostAndPort(address, port), string.Empty, string.Empty, new string[0]);
+            _service = new Service(name, new ServiceHostAndPort(address, port), string.Empty, string.Empty, new string[0]);
         }
 
         private void WhenIRegisterTheService()
@@ -129,8 +131,7 @@ namespace Ocelot.UnitTests.ServiceDiscovery
             else
             {     
                 _registeredServices[serviceNameAndAddress.Name] = new List<Service>(){ serviceNameAndAddress };
-            }
-            
+            }          
         }
     }
 }

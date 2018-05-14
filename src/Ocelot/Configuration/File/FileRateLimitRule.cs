@@ -1,11 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
+using Ocelot.Infrastructure.Extensions;
 
 namespace Ocelot.Configuration.File
 {
-
     public class FileRateLimitRule
     {
         public FileRateLimitRule()
@@ -26,9 +27,26 @@ namespace Ocelot.Configuration.File
         public string Period { get; set; }
 
         public double PeriodTimespan { get; set; }
+        
         /// <summary>
         /// Maximum number of requests that a client can make in a defined period
         /// </summary>
         public long Limit { get; set; }
+
+        public override string ToString()
+        {
+            if (!EnableRateLimiting)
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder();
+            sb.Append(
+                $"{nameof(Period)}:{Period},{nameof(PeriodTimespan)}:{PeriodTimespan:F},{nameof(Limit)}:{Limit},{nameof(ClientWhitelist)}:[");
+
+            sb.AppendJoin(',', ClientWhitelist);
+            sb.Append(']');
+            return sb.ToString();
+        }
     }
 }
